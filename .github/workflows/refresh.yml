@@ -1,0 +1,39 @@
+name: Auto-refresh data & rebuild
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "_build/**"
+      - ".github/workflows/refresh.yml"
+  schedule:
+    - cron: "17 6 * * *"   # daily, 06:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Refresh CPI data (FRED → BLS fallback)
+        run: python3 _build/refresh_data.py
+      - name: Rebuild pages, dates & sitemap
+        run: python3 _build/build.py
+      - name: Commit changes
+        run: |
+          git config user.name "89944-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A data sitemap.xml *.html tools guides
+          if git diff --cached --quiet; then echo "No changes"; exit 0; fi
+          git commit -m "chore: auto-refresh data $(date -u +%F)"
+          git push
